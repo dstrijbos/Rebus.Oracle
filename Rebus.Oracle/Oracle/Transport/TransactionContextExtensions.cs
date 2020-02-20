@@ -34,5 +34,16 @@ namespace Rebus.Oracle.Transport
                 return command;
             });
         }
+
+        public static OracleCommand GetSendCommandPartitioned(this ITransactionContext context, OracleFactory factory, string sql)
+        {
+            return context.GetOrAdd(SendCommandKey, () =>
+            {
+                var connection = context.GetConnection(factory);
+                var command = SendCommandPartitioned.Create(connection, sql);
+                context.OnDisposed(command.Dispose);
+                return command;
+            });
+        }
     }
 }

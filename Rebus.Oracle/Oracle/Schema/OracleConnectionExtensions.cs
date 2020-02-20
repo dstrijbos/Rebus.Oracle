@@ -11,6 +11,10 @@ namespace Rebus.Oracle.Schema
         public static bool CreateRebusTransport(this OracleConnection connection, DbName tableName) 
             => connection.CreateIfNotExists(tableName, DDL.transport);
 
+        /// <summary>Create objects supporting partitioned Transport.</summary>
+        public static bool CreateRebusTransportPartitioned(this OracleConnection connection, DbName tableName)
+            => connection.CreateIfNotExists(tableName, DDL.transportPartitioned);
+
         /// <summary>Create objects supporting Timeouts.</summary>
         public static bool CreateRebusTimeout(this OracleConnection connection, DbName tableName)
             => connection.CreateIfNotExists(tableName, DDL.timeout);

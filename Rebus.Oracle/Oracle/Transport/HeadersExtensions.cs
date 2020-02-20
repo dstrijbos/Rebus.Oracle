@@ -36,5 +36,12 @@ namespace Rebus.Oracle.Transport
 
             return timeToBeReceived;
         }
+
+        public static string GetGroupId(this Dictionary<string, string> headers)
+        {
+            if (!headers.TryGetValue(OraclePartitionedTransport.GroupIdHeaderKey, out var groupIdString))
+                return string.Empty;
+            return groupIdString;
+        }
     }
 }

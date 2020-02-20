@@ -1,3 +1,4 @@
+using Rebus.Oracle.Transport;
 using System;
 
 namespace Rebus.Oracle.Schema
@@ -56,6 +57,64 @@ BEGIN
     open output for select * from {table.Name} where id = messageId;
 
     delete from {table.Name} where id = messageId;
+END;"
+        };
+
+        public static readonly Func<DbName, string[]> transportPartitioned = table => new[] {
+$@"CREATE TABLE {table}
+(
+    id number(20) NOT NULL,
+    recipient varchar2(255) NOT NULL,
+    priority number(20) NOT NULL,
+    expiration timestamp with time zone NOT NULL,
+    visible timestamp with time zone NOT NULL,
+    headers blob NOT NULL,
+    body blob NOT NULL,
+    groupId varchar2(255),
+    status varchar2(255),
+
+    CONSTRAINT {table.Name}_pk PRIMARY KEY (recipient, priority, id)
+)",
+
+$"CREATE SEQUENCE {table}_seq",
+
+$@"CREATE OR REPLACE TRIGGER {table}_on_insert
+    BEFORE INSERT ON {table}
+    FOR EACH ROW
+BEGIN
+    if :new.Id is null then
+        :new.id := {table.Name}_seq.nextval;
+    end if;
+END;",
+
+$@"CREATE INDEX {table.Prefix}idx_receive_{table.Name} ON {table}
+(
+    recipient ASC, 
+    expiration ASC, 
+    visible ASC
+)",
+
+$@"CREATE OR REPLACE PROCEDURE {table.Prefix}rebus_dequeue_{table.Name}(recipientQueue IN varchar, now IN timestamp with time zone, output OUT SYS_REFCURSOR) AS
+    messageId number;
+    readCursor SYS_REFCURSOR; 
+BEGIN
+    open readCursor for 
+    select id
+    from {table.Name}
+    where recipient = recipientQueue
+      and visible < now
+      and expiration > now
+      and status is null
+	  and (groupId is null or groupId not in (select groupId from {table.Name} where status = '{OraclePartitionedTransport.ProcessingStatus}'))
+    order by priority ASC, visible ASC, id ASC
+    for update skip locked;
+    
+    fetch readCursor into messageId;
+    close readCursor;
+
+    open output for select * from {table.Name} where id = messageId;
+
+    update {table.Name} set status = '{OraclePartitionedTransport.ProcessingStatus}' where id = messageId;
 END;"
         };
 
