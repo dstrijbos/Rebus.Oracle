@@ -70,7 +70,7 @@ $@"CREATE TABLE {table}
     visible timestamp with time zone NOT NULL,
     headers blob NOT NULL,
     body blob NOT NULL,
-    groupId varchar2(255),
+    partitionId varchar2(255),
     status varchar2(255),
 
     CONSTRAINT {table.Name}_pk PRIMARY KEY (recipient, priority, id)
@@ -94,7 +94,7 @@ $@"CREATE INDEX {table.Prefix}idx_receive_{table.Name} ON {table}
     visible ASC
 )",
 
-$@"CREATE OR REPLACE PROCEDURE {table.Prefix}rebus_dequeue_{table.Name}(recipientQueue IN varchar, now IN timestamp with time zone, output OUT SYS_REFCURSOR) AS
+$@"CREATE OR REPLACE PROCEDURE {table.Prefix}rebus_dequeue_{table.Name}(recipientQueue IN varchar, now IN timestamp with time zone, persistent IN boolean, output OUT SYS_REFCURSOR) AS
     messageId number;
     readCursor SYS_REFCURSOR; 
 BEGIN
@@ -105,16 +105,21 @@ BEGIN
       and visible < now
       and expiration > now
       and status is null
-	  and (groupId is null or groupId not in (select groupId from {table.Name} where status = '{OraclePartitionedTransport.ProcessingStatus}'))
+	  and (partitionId is null or partitionId not in (select partitionId from {table.Name} where status = '{OraclePartitionedTransport.ProcessingStatus}'))
     order by priority ASC, visible ASC, id ASC
     for update skip locked;
     
     fetch readCursor into messageId;
     close readCursor;
 
-    open output for select * from {table.Name} where id = messageId;
-
     update {table.Name} set status = '{OraclePartitionedTransport.ProcessingStatus}' where id = messageId;
+    commit;
+
+    open output for select * from {table.Name} where id = messageId;
+	
+	if persistent then update {table.Name} set status = '{OraclePartitionedTransport.CompletedStatus}' where id = messageId;
+	else delete from {table.Name}  where id = messageId;	
+	end if;
 END;"
         };
 

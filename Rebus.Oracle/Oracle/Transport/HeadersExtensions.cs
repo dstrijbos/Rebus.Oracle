@@ -37,11 +37,11 @@ namespace Rebus.Oracle.Transport
             return timeToBeReceived;
         }
 
-        public static string GetGroupId(this Dictionary<string, string> headers)
+        public static string GetPartitionId(this Dictionary<string, string> headers)
         {
-            if (!headers.TryGetValue(OraclePartitionedTransport.GroupIdHeaderKey, out var groupIdString))
+            if (!headers.TryGetValue(OraclePartitionedTransport.PartitionIdHeaderKey, out var partitionIdString))
                 return string.Empty;
-            return groupIdString;
+            return partitionIdString;
         }
     }
 }

@@ -23,10 +23,8 @@ namespace Rebus.Oracle.Transport
     /// </summary>
     public class OraclePartitionedTransport : ITransport, IInitializable, IDisposable
     {
-        /// <summary>Header key of message GroupId, use this to partition your queue</summary>
-        public const string GroupIdHeaderKey = "rbs2-msg-groupid";
-        /// <summary>Header key of message Status, used for partitioned queues</summary>
-        public const string StatusHeaderKey = "rbs2-msg-status";
+        /// <summary>Header key of message PartitionId, use this to partition your queue</summary>
+        public const string PartitionIdHeaderKey = "rbs2-msg-partitionid";
         public const string ProcessingStatus = "Processing";
         public const string CompletedStatus = "Completed";
 
@@ -38,6 +36,7 @@ namespace Rebus.Oracle.Transport
         readonly IAsyncTask _expiredMessagesCleanupTask;
         readonly ILog _log;
         readonly IRebusTime _rebusTime;
+        readonly bool _persistent;
 
         // SQL are cached so that strings are not built up at every command
         readonly string _sendSql, _receiveSql, _expiredSql;
@@ -52,7 +51,8 @@ namespace Rebus.Oracle.Transport
         /// <param name="rebusLoggerFactory"></param>
         /// <param name="asyncTaskFactory"></param>
         /// <param name="rebusTime"></param>
-        public OraclePartitionedTransport(OracleFactory connectionHelper, string tableName, string inputQueueName, IRebusLoggerFactory rebusLoggerFactory, IAsyncTaskFactory asyncTaskFactory, IRebusTime rebusTime)
+        /// <param name="enablePersistence"></param>
+        public OraclePartitionedTransport(OracleFactory connectionHelper, string tableName, string inputQueueName, IRebusLoggerFactory rebusLoggerFactory, IAsyncTaskFactory asyncTaskFactory, IRebusTime rebusTime, bool enablePersistence)
         {
             if (rebusLoggerFactory == null) throw new ArgumentNullException(nameof(rebusLoggerFactory));
             if (asyncTaskFactory == null) throw new ArgumentNullException(nameof(asyncTaskFactory));
@@ -63,6 +63,7 @@ namespace Rebus.Oracle.Transport
             _factory = connectionHelper ?? throw new ArgumentNullException(nameof(connectionHelper));
             _table = new DbName(tableName);
             _sendSql = SendCommandPartitioned.Sql(_table);
+            _persistent = enablePersistence;
 
             // One-way clients don't have an input queue to receive from or cleanup
             if (inputQueueName != null)
@@ -92,7 +93,7 @@ namespace Rebus.Oracle.Transport
             var priority = headers.GetMessagePriority();
             var visible = headers.GetInitialVisibilityDelay(now);
             var ttl = headers.GetTtlSeconds();
-            var groupId = headers.GetGroupId();
+            var partitionId = headers.GetPartitionId();
             var serializedHeaders = HeaderSerializer.Serialize(headers);
 
             var command = context.GetSendCommandPartitioned(_factory, _sendSql);
@@ -111,7 +112,7 @@ namespace Rebus.Oracle.Transport
                     Now = now,
                     Visible = visible,
                     TtlSeconds = ttl,
-                    GroupId = groupId
+                    PartitionId = partitionId
                 }
                 .ExecuteNonQuery();
             }
@@ -134,6 +135,7 @@ namespace Rebus.Oracle.Transport
                     selectCommand.CommandType = CommandType.StoredProcedure;
                     selectCommand.Parameters.Add("recipientQueue", Address);
                     selectCommand.Parameters.Add("now", _rebusTime.Now.ToOracleTimeStamp());
+                    selectCommand.Parameters.Add("persistent", _persistent);
                     selectCommand.Parameters.Add("output", OracleDbType.RefCursor, ParameterDirection.Output);
                     selectCommand.InitialLOBFetchSize = -1;
                     selectCommand.ExecuteNonQuery();
@@ -147,10 +149,6 @@ namespace Rebus.Oracle.Transport
                         var headersDictionary = HeaderSerializer.Deserialize(headers);
 
                         var message = new TransportMessage(headersDictionary, body);
-                        
-                        context.OnCompleted(() =>
-                            MarkAsCompleted(message)
-                        );
 
                         return message;
                     }
@@ -202,28 +200,6 @@ namespace Rebus.Oracle.Transport
             catch (Exception exception)
             {
                 throw new RebusApplicationException(exception, $"Error attempting to initialize Oracle transport schema with mesages table {_table}");
-            }
-        }
-
-        /// <summary>Marks the specified message as completed</summary>
-        public Task MarkAsCompleted(TransportMessage message)
-        {
-            var headerBytes = HeaderSerializer.Serialize(message.Headers);
-
-            var completionSql = $@"update {_table} set status = :status where dbms_lob.compare(headers,:headers) = 0";
-
-            using (var connection = _factory.Open())
-            using (var command = connection.CreateCommand())
-            {
-                command.CommandText = completionSql;
-                command.Parameters.Add("status", CompletedStatus);
-                command.Parameters.Add("headers", headerBytes);
-
-                int affectedRows = command.ExecuteNonQuery();
-
-                connection.Complete();
-                
-                return Task.CompletedTask;
             }
         }
 

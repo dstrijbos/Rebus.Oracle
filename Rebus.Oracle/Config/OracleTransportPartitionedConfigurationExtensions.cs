@@ -20,12 +20,12 @@ namespace Rebus.Config
         /// store messages, and the "queue" specified by <paramref name="inputQueueName"/> will be used when querying for messages.
         /// The message table will automatically be created if it does not exist.
         /// </summary>
-        public static void UseOraclePartitioned(this StandardConfigurer<ITransport> configurer, string connectionString, string tableName, string inputQueueName, bool enlistInAmbientTransaction = false, bool automaticallyCreateTables = true)
+        public static void UseOraclePartitioned(this StandardConfigurer<ITransport> configurer, string connectionString, string tableName, string inputQueueName, bool enlistInAmbientTransaction = false, bool enablePersistence = false, bool automaticallyCreateTables = true)
         {
-            Configure(configurer, loggerFactory => new OracleFactory(connectionString, null, enlistInAmbientTransaction), tableName, inputQueueName, automaticallyCreateTables);
+            Configure(configurer, loggerFactory => new OracleFactory(connectionString, null, enlistInAmbientTransaction), tableName, inputQueueName, enablePersistence, automaticallyCreateTables);
         }
 
-        static void Configure(StandardConfigurer<ITransport> configurer, Func<IRebusLoggerFactory, OracleFactory> connectionProviderFactory, string tableName, string inputQueueName, bool automaticallyCreateTables = true)
+        static void Configure(StandardConfigurer<ITransport> configurer, Func<IRebusLoggerFactory, OracleFactory> connectionProviderFactory, string tableName, string inputQueueName, bool enablePersistence = false, bool automaticallyCreateTables = true)
         {
             configurer.Register(context =>
             {
@@ -33,7 +33,7 @@ namespace Rebus.Config
                 var asyncTaskFactory = context.Get<IAsyncTaskFactory>();
                 var rebusTime = context.Get<IRebusTime>();
                 var connectionProvider = connectionProviderFactory(rebusLoggerFactory);
-                var transport = new OraclePartitionedTransport(connectionProvider, tableName, inputQueueName, rebusLoggerFactory, asyncTaskFactory, rebusTime);
+                var transport = new OraclePartitionedTransport(connectionProvider, tableName, inputQueueName, rebusLoggerFactory, asyncTaskFactory, rebusTime, enablePersistence);
 
                 if (automaticallyCreateTables)
                     transport.EnsureTableIsCreated();

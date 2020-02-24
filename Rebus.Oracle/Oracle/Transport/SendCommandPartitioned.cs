@@ -15,8 +15,8 @@ namespace Rebus.Oracle.Transport
         }
 
         public static string Sql(DbName table) =>
-            $@"INSERT INTO {table} (recipient,  headers,  body,  priority,  visible,         expiration,         groupid)
-               VALUES              (:recipient, :headers, :body, :priority, :now + :visible, :now + :ttlseconds, :groupid)";
+            $@"INSERT INTO {table} (recipient,  headers,  body,  priority,  visible,         expiration,         partitionid)
+               VALUES              (:recipient, :headers, :body, :priority, :now + :visible, :now + :ttlseconds, :partitionid)";
 
         public static OracleCommand Create(UnitOfWork connection, string sql)
         {
@@ -30,7 +30,7 @@ namespace Rebus.Oracle.Transport
             command.Parameters.Add("now", OracleDbType.TimeStampTZ);        // 4
             command.Parameters.Add("visible", OracleDbType.IntervalDS);     // 5
             command.Parameters.Add("ttlseconds", OracleDbType.IntervalDS);  // 6
-            command.Parameters.Add("groupid", OracleDbType.Varchar2);       // 7
+            command.Parameters.Add("partitionid", OracleDbType.Varchar2);   // 7
             return command;
         }
 
@@ -41,7 +41,7 @@ namespace Rebus.Oracle.Transport
         public DateTimeOffset Now { set => _command.Parameters[4].Value = value.ToOracleTimeStamp(); }
         public TimeSpan Visible { set => _command.Parameters[5].Value = value; }
         public TimeSpan TtlSeconds { set => _command.Parameters[6].Value = value; }
-        public string GroupId { set => _command.Parameters[7].Value = value; }
+        public string PartitionId { set => _command.Parameters[7].Value = value; }
 
         public int ExecuteNonQuery() => _command.ExecuteNonQuery();
     }
